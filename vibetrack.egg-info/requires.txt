@@ -1,0 +1,7 @@
+mcp<2,>=1.2
+starlette
+uvicorn
+
+[dev]
+pytest
+httpx

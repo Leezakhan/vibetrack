@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: vibetrack-remote
+    runtime: python
+    plan: free
+    buildCommand: pip install -e .
+    startCommand: uvicorn vibetrack.remote_server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /mcp
+    envVars:
+      - key: VIBETRACK_TOKEN
+        generateValue: true   # Render generates a random secret; copy it from the dashboard
+      - key: VIBETRACK_DB
+        value: /tmp/vibetrack.db   # see the persistence warning in the README before relying on this

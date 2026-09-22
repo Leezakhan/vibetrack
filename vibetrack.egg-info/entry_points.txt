@@ -1,0 +1,5 @@
+[console_scripts]
+vibetrack-dashboard = vibetrack.dashboard:main
+vibetrack-handoff = vibetrack.handoff:main
+vibetrack-init = vibetrack.init_project:main
+vibetrack-server = vibetrack.server:main

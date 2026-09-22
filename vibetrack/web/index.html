@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VibeTrack</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <select id="project" aria-label="Project"></select>
+    <span id="updated" class="muted" role="status"></span>
+  </header>
+  <p id="error" class="error" role="alert" hidden></p>
+  <noscript><p class="error">The dashboard needs JavaScript.</p></noscript>
+
+  <p id="empty" class="empty" hidden>
+    No projects yet. Give your AI <code>PROJECT_RULES.md</code> and a project document,
+    and it creates one with <code>create_project</code>.
+  </p>
+
+  <main id="app" hidden>
+    <section class="hero">
+      <h1 id="headline"></h1>
+      <p id="summary" class="lead"></p>
+      <div id="statusbar" class="bar-track" role="img" aria-label="Task status"></div>
+      <ul id="status-legend" class="legend"></ul>
+    </section>
+
+    <section aria-labelledby="h-burn">
+      <h2 id="h-burn">Work left, plan versus reality</h2>
+      <div id="burndown"></div>
+      <p class="note">The plan is a straight line from today's total work to zero at the deadline.
+        Tasks without an estimate count as 1 hour.</p>
+    </section>
+
+    <div class="cols">
+      <section aria-labelledby="h-now">
+        <h2 id="h-now">Working on now</h2>
+        <ul id="now" class="list"></ul>
+        <div id="blocked-box" hidden>
+          <h2 id="h-blocked" class="sub">Blocked</h2>
+          <ul id="blocked" class="list"></ul>
+        </div>
+      </section>
+      <section aria-labelledby="h-next">
+        <h2 id="h-next">Up next, in order</h2>
+        <ol id="next" class="list ordered"></ol>
+      </section>
+    </div>
+
+    <div class="cols">
+      <section aria-labelledby="h-epics">
+        <h2 id="h-epics">Hours by area</h2>
+        <p class="note">Grey is estimated, colour is logged so far.</p>
+        <div id="epics"></div>
+      </section>
+      <section aria-labelledby="h-types">
+        <h2 id="h-types">Tasks by type</h2>
+        <div id="types"></div>
+      </section>
+    </div>
+
+    <section aria-labelledby="h-activity">
+      <h2 id="h-activity">Who changed the tracker, last 14 days</h2>
+      <div id="activity"></div>
+      <ul id="activity-legend" class="legend"></ul>
+    </section>
+
+    <div class="cols">
+      <section aria-labelledby="h-tree">
+        <h2 id="h-tree">All tasks</h2>
+        <ul id="tree" class="tree root"></ul>
+      </section>
+      <section aria-labelledby="h-decisions">
+        <h2 id="h-decisions">Decisions</h2>
+        <ul id="decisions" class="tree root"></ul>
+      </section>
+    </div>
+
+    <section aria-labelledby="h-handoff">
+      <h2 id="h-handoff">Hand over to another AI</h2>
+      <p class="lead">A briefing with the project, status, decisions and working rules, for an AI with no prior context.</p>
+      <div class="handoff-actions">
+        <button id="download-handoff" type="button">Download HANDOFF.md</button>
+        <button id="copy-handoff" type="button">Copy instead</button>
+      </div>
+      <ul id="contributors" class="list contributors"></ul>
+    </section>
+  </main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

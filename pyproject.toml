@@ -1,0 +1,26 @@
+[project]
+name = "vibetrack"
+version = "0.1.0"
+description = "Project memory for AI-assisted (vibe) coding: nested tasks, priority queue, decision tree, AI handoff."
+requires-python = ">=3.10"
+# Written against mcp 1.x (mcp.server.fastmcp). Bump the cap deliberately after testing.
+dependencies = ["mcp>=1.2,<2", "starlette", "uvicorn"]  # the last two also ship with mcp
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[project.scripts]
+vibetrack-server = "vibetrack.server:main"
+vibetrack-handoff = "vibetrack.handoff:main"
+vibetrack-dashboard = "vibetrack.dashboard:main"
+vibetrack-init = "vibetrack.init_project:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["vibetrack*"]
+
+[tool.setuptools.package-data]
+vibetrack = ["PROJECT_RULES.md", "web/*"]
