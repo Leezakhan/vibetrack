@@ -101,6 +101,22 @@ Your URL is `https://<your-service>.onrender.com/mcp?token=<your-token>`.
 - **Gemini CLI / Antigravity:** add to `~/.gemini/settings.json` (or `agy mcp add --type http`):
   `{"mcpServers": {"vibetrack": {"httpUrl": "https://<your-service>.onrender.com/mcp", "headers": {"Authorization": "Bearer <your-token>"}}}}`
 
+### Plain URLs for tools that can only browse a page (Phase 2.6)
+ChatGPT's free tier (no Developer mode, no paid plan) can fetch a URL with its web-search tool but
+can't speak MCP or run a Custom GPT Action. Two extra endpoints on the same server cover that:
+
+```
+GET  https://<host>/task?token=<token>[&project=<slug>]      -> the next task, plain JSON
+GET  https://<host>/context?token=<token>[&project=<slug>]   -> the full handoff, plain text
+POST https://<host>/task?token=<token>                       -> update a task, JSON body:
+     {"task_id": 3, "status": "done", "note": "...", "hours_spent": 1.5}
+```
+`project` can be left off when you only have one project. Tell ChatGPT: "Visit
+`https://.../task?token=...` for your next task" — it can read that with its browsing tool. It
+still can't POST on its own, so updates go through your own curl command, a shortcut, or whatever
+you already had posting to a Gist — just point it at `/task` instead, since a Gist itself can't
+run VibeTrack's logic (status rules, notes, hour totals) the way this endpoint does.
+
 ### Test it locally first
 ```bash
 VIBETRACK_TOKEN=devsecret VIBETRACK_DB=/tmp/remote.db uvicorn vibetrack.remote_server:app --port 8080
@@ -109,3 +125,17 @@ curl "http://127.0.0.1:8080/mcp?token=devsecret" -X POST -H "Content-Type: appli
   -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}'
 ```
+
+## Switching between free AI tools when one hits a limit (Phase 2.5)
+No server can detect a quota message shown inside ChatGPT's or Gemini's own website — that only
+happens in your browser. What this does instead: cuts the manual switch-over down to one command.
+
+Tell the AI you're using which tools you actually have, once per project:
+> Set my AI rotation to claude, codex, gemini, chatgpt (in the order I want you to try them).
+
+When you hit a limit, just say so ("I've hit my limit") — the rules tell every connected AI to
+call `switch_ai`, which advances to the next tool in your list and hands back the full handoff
+text in one step. It writes that to `HANDOFF.md` and tells you which tool to open next. You open
+that tool, paste the file, and continue — no digging through old commands.
+The dashboard also shows a line under the status bar: which tool is currently on the project, and
+which one is next in line.

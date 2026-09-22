@@ -144,6 +144,27 @@ def get_decision_tree(project: str) -> List[Dict[str, Any]]:
         return decisions.tree(conn, project_id(conn, project))
 
 
+# ---------- Switching AI tools (free-tier quota rotation) ----------
+@mcp.tool()
+def switch_ai(project: str, reason: str = "", actor: str = "unknown") -> Dict[str, Any]:
+    """Call this the moment you (or the user) hit a usage limit and need to switch tools. Advances
+    to the next AI in the project's rotation and returns its name plus the full handoff briefing,
+    so the only step left for the user is opening that tool and pasting/attaching the briefing.
+    Write the same briefing to HANDOFF.md too (see PROJECT_RULES.md), then tell the user which
+    tool to open next."""
+    with connect() as conn:
+        return projects.switch_ai(conn, project_id(conn, project), actor, reason)
+
+
+@mcp.tool()
+def set_ai_rotation(project: str, tools: List[str], actor: str = "claude") -> Dict[str, Any]:
+    """Set which AI tools to rotate through when one hits a limit, in the order to try them
+    (e.g. ["claude", "codex", "gemini", "chatgpt"]). Ask the user which tools they actually have
+    available before setting this, rather than assuming."""
+    with connect() as conn:
+        return projects.set_rotation(conn, project_id(conn, project), tools, actor)
+
+
 def main() -> None:
     mcp.run()  # stdio: the AI client launches this process itself
 

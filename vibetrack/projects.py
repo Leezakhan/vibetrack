@@ -1,4 +1,5 @@
 """Projects: creation, editing, and the one-call overview."""
+import json
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -49,6 +50,42 @@ def update(conn: sqlite3.Connection, pid: int, fields: Dict[str, Any], actor: st
     log_event(conn, pid, actor, "project_updated", "", ", ".join(sorted(changes)))
 
 
+def _rotation(conn: sqlite3.Connection, pid: int) -> Dict[str, Any]:
+    row = conn.execute("SELECT ai_rotation, ai_cursor FROM projects WHERE id = ?", (pid,)).fetchone()
+    tools = json.loads(row["ai_rotation"])
+    return {"tools": tools, "cursor": row["ai_cursor"] % len(tools), "current": tools[row["ai_cursor"] % len(tools)]}
+
+
+def set_rotation(conn: sqlite3.Connection, pid: int, tools: list, actor: str = "claude") -> Dict[str, Any]:
+    """Set which AI tools to rotate through, in order. Names are freeform (whatever you call
+    the tool); duplicates and blanks are dropped, order is kept. Resets to the first one."""
+    clean, seen = [], set()
+    for t in tools:
+        t = (t or "").strip().lower()
+        if t and t not in seen:
+            clean.append(t); seen.add(t)
+    if not clean:
+        raise ValueError("tools must contain at least one AI name")
+    conn.execute("UPDATE projects SET ai_rotation = ?, ai_cursor = 0 WHERE id = ?", (json.dumps(clean), pid))
+    log_event(conn, pid, actor, "ai_rotation_set", "", ", ".join(clean))
+    return _rotation(conn, pid)
+
+
+def switch_ai(conn: sqlite3.Connection, pid: int, actor: str, reason: str = "") -> Dict[str, Any]:
+    """One call for 'I hit a limit': advances to the next AI in the rotation and returns the
+    handoff briefing for it, so the only manual step left is opening that tool and pasting it."""
+    from . import handoff  # local import: handoff imports this module, so avoid a import cycle
+
+    before = _rotation(conn, pid)
+    new_cursor = before["cursor"] + 1
+    conn.execute("UPDATE projects SET ai_cursor = ? WHERE id = ?", (new_cursor, pid))
+    after = _rotation(conn, pid)
+    log_event(conn, pid, actor, "ai_switched", after["current"],
+             reason or f"from {before['current']}")
+    return {"you_were_using": before["current"], "open_next": after["current"],
+            "rotation": after["tools"], "handoff_markdown": handoff.build(conn, pid)}
+
+
 def overview(conn: sqlite3.Connection, pid: int) -> Dict[str, Any]:
     """Everything needed to know where the project stands, in one dict."""
     p = dict(conn.execute("SELECT * FROM projects WHERE id = ?", (pid,)).fetchone())
@@ -64,6 +101,7 @@ def overview(conn: sqlite3.Connection, pid: int) -> Dict[str, Any]:
         "WHERE project_id = ? AND actor != 'system' GROUP BY actor ORDER BY actions DESC", (pid,))
     return {
         "project": {k: p[k] for k in ("slug", "name", "description", "scope", "conventions")},
+        "ai_rotation": _rotation(conn, pid),
         "timeline": timeline,
         "progress": tasks.progress(conn, pid),
         "in_progress": tasks.leaves(conn, pid, "in_progress"),

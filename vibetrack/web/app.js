@@ -227,6 +227,10 @@ function decisionNode(d) {
 function render(ov, ch, tree, dec) {
   $("headline").textContent = headline(ov, ch.burndown);
   $("summary").textContent = summary(ov);
+  const rot = ov.ai_rotation;
+  $("rotation").textContent = rot.tools.length > 1
+    ? `Working with ${rot.current}. If it hits a limit: ${rot.tools[(rot.cursor + 1) % rot.tools.length]} next.`
+    : `Working with ${rot.current}.`;
   section("status", ov.progress, renderStatus);
   section("burn", ch.burndown, renderBurndown);
   section("epics", ch.epics, renderEpics);

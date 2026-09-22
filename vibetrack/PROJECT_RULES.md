@@ -46,7 +46,16 @@ what actually happened. Never re-litigate a recorded decision unless the user as
 - **Tests:** cover core logic and edge cases; run them before marking a task done.
 - Match the existing style of the codebase; follow `conventions`.
 
-## 5. Context and handoff
+## 5. Hitting a usage limit
+The moment you (or the user) hit a quota/usage limit mid-task: finish your current note on the
+task you're on (what's done, what's left), then call `switch_ai` with a one-line reason. It tells
+you which tool to open next and gives you the full handoff text — write that text to `HANDOFF.md`
+(same as step 6 below), then tell the user plainly: "Hit a limit. Open <tool> and paste HANDOFF.md
+there." The user only has to open the next tool and hand it the file; nothing else.
+On first use, ask the user which AI tools they actually have (Claude Code, Codex, Antigravity,
+ChatGPT, Gemini, ...) and set the order with `set_ai_rotation`, instead of assuming.
+
+## 6. Context and handoff
 - Long session or context nearly full, or the user asks for a handoff: call `get_handoff_context`,
   then write its result to a file named `HANDOFF.md` in the project's root folder using your own
   file-writing tool. Tell the user it's there, then stop; a new AI session or tool reads it from

@@ -36,9 +36,12 @@ def build(conn: sqlite3.Connection, pid: int) -> str:
     p, prog, tl = ov["project"], ov["progress"], ov["timeline"]
     days = f"day {tl['days_elapsed']}" + (f" of {tl['planned_days']}" if "planned_days" in tl else "")
 
+    rot = ov["ai_rotation"]
     out = [
         f"# Handoff: {p['name']} (`{p['slug']}`)",
-        "You are taking over an in-progress project. Read everything, then call `next_task`.",
+        f"You are **{rot['current']}**, taking over an in-progress project. Read everything, "
+        "then call `next_task`. If you hit a usage limit yourself, call `switch_ai`.",
+        f"Tool rotation: {' -> '.join(rot['tools'])} (currently at `{rot['current']}`)",
         "",
         "## Project", p["description"] or "_not set_", "",
         "### Scope", p["scope"] or "_not set_", "",

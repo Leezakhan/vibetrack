@@ -101,3 +101,5 @@ svg .a3 { fill: var(--a3); } svg .a4 { fill: var(--a4); }
 #epics { margin-top: 1rem; }
 
 .handoff-actions { display: flex; gap: .75rem; flex-wrap: wrap; }
+
+.rotation { margin: 0 0 1.25rem; }

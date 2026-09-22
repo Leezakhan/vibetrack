@@ -71,3 +71,24 @@ def test_decisions_and_handoff(conn, pid):
         assert expected in text
     who = {c["actor"] for c in projects.overview(conn, pid)["contributors"]}
     assert "gpt" in who and "system" not in who      # the internal actor is hidden
+
+
+def test_ai_rotation_and_switch(conn, pid):
+    ov = projects.overview(conn, pid)
+    assert ov["ai_rotation"]["current"] == "claude"       # built-in default, first in line
+
+    projects.set_rotation(conn, pid, ["ChatGPT", " Gemini", "chatgpt", ""])   # messy input
+    ov = projects.overview(conn, pid)
+    assert ov["ai_rotation"] == {"tools": ["chatgpt", "gemini"], "cursor": 0, "current": "chatgpt"}
+
+    result = projects.switch_ai(conn, pid, actor="chatgpt", reason="hit daily limit")
+    assert result["you_were_using"] == "chatgpt" and result["open_next"] == "gemini"
+    assert "Handoff:" in result["handoff_markdown"] and "gemini" in result["handoff_markdown"]
+    assert projects.overview(conn, pid)["ai_rotation"]["current"] == "gemini"
+
+    # wraps back to the start after the last one
+    projects.switch_ai(conn, pid, actor="gemini")
+    assert projects.overview(conn, pid)["ai_rotation"]["current"] == "chatgpt"
+
+    with pytest.raises(ValueError):
+        projects.set_rotation(conn, pid, ["", "  "])       # nothing usable

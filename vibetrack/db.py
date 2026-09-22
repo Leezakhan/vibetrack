@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS projects (
   scope         TEXT NOT NULL DEFAULT '',
   conventions   TEXT NOT NULL DEFAULT '',   -- stack, code style, how the user works with AI
   timeline_days INTEGER,
+  ai_rotation   TEXT NOT NULL DEFAULT '["claude","codex","gemini","chatgpt"]',  -- JSON list, tried in order
+  ai_cursor     INTEGER NOT NULL DEFAULT 0,   -- index into ai_rotation of the AI currently in use
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
