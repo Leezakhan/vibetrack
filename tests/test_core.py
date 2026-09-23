@@ -1,7 +1,7 @@
 """Core behaviour tests. Run: pytest -q"""
 import pytest
 
-from vibetrack import decisions, handoff, projects, tasks
+from vibetrack import db, decisions, handoff, projects, tasks
 
 
 PLAN = [
@@ -92,3 +92,27 @@ def test_ai_rotation_and_switch(conn, pid):
 
     with pytest.raises(ValueError):
         projects.set_rotation(conn, pid, ["", "  "])       # nothing usable
+
+
+def test_upgrading_an_old_database_adds_missing_columns_without_losing_data(tmp_path, monkeypatch):
+    import sqlite3
+    old_path = tmp_path / "old.db"
+    conn = sqlite3.connect(old_path)
+    conn.executescript('''
+        CREATE TABLE projects (
+          id INTEGER PRIMARY KEY, slug TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '', scope TEXT NOT NULL DEFAULT '',
+          conventions TEXT NOT NULL DEFAULT '', timeline_days INTEGER,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    ''')
+    conn.execute("INSERT INTO projects (slug, name, timeline_days) VALUES ('old-proj', 'Old Proj', 15)")
+    conn.commit(); conn.close()
+
+    monkeypatch.setattr(db, "DB_PATH", old_path)
+    with db.connect() as c:
+        ov = projects.overview(c, projects.SLUG_RE and 1)  # id 1: the only row inserted above
+        assert ov["project"]["slug"] == "old-proj"          # pre-existing data survives
+        assert ov["ai_rotation"]["current"] == "claude"       # new column gets a sane default
+    with db.connect() as c:                                  # reconnecting must not error either
+        assert c.execute("SELECT ai_cursor FROM projects").fetchone()["ai_cursor"] == 0

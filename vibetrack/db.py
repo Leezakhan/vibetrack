@@ -82,6 +82,23 @@ CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id, created_at);
 """
 
 
+# Columns added to `projects` after it first shipped. CREATE TABLE IF NOT EXISTS only creates a
+# table that doesn't exist yet — it never adds a column to one a person already has on disk. Each
+# entry here is added with ALTER TABLE if a database predates it, so an old vibetrack.db keeps
+# working after an upgrade instead of raising "no such column".
+_PROJECT_COLUMNS_ADDED_SINCE_1_0 = [
+    ("ai_rotation", 'TEXT NOT NULL DEFAULT \'["claude","codex","gemini","chatgpt"]\''),
+    ("ai_cursor", "INTEGER NOT NULL DEFAULT 0"),
+]
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    have = {row["name"] for row in conn.execute("PRAGMA table_info(projects)")}
+    for name, coltype in _PROJECT_COLUMNS_ADDED_SINCE_1_0:
+        if name not in have:
+            conn.execute(f"ALTER TABLE projects ADD COLUMN {name} {coltype}")
+
+
 @contextmanager
 def connect():
     """Yield a connection; commit on success, roll back on error, always close."""
@@ -90,7 +107,8 @@ def connect():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA journal_mode = WAL")  # lets a dashboard read while the AI writes
-    conn.executescript(SCHEMA)                 # idempotent, so no separate migration step yet
+    conn.executescript(SCHEMA)                 # creates tables that don't exist yet
+    _migrate(conn)                             # adds columns to tables that already exist
     try:
         yield conn
         conn.commit()
