@@ -16,6 +16,7 @@ can't launch a local process and only take a URL.
 Run locally:   VIBETRACK_TOKEN=devsecret uvicorn vibetrack.remote_server:app --port 8080
 Then:          https://your-host/mcp?token=devsecret  (or header Authorization: Bearer devsecret)
 """
+import json
 import os
 import sys
 
@@ -94,6 +95,45 @@ async def plain_context(request: Request) -> PlainTextResponse:
         return PlainTextResponse(str(exc), status_code=400)
 
 
+MAX_HANDOFF_BYTES = 500_000   # a handoff is text; this stops a runaway or malicious upload
+
+
+async def handoff_box(request: Request) -> PlainTextResponse:
+    """A drop box for the final handoff, keyed by project slug.
+
+    POST {"markdown": "...", "pushed_by": "codex"} stores it (replacing the previous one).
+    GET returns the latest stored text, so ChatGPT (or any tool with the token) can read it.
+    Separate from /context on purpose: /context rebuilds from THIS server's database, which is
+    empty when your real work happens on your laptop. This holds exactly what the laptop pushed.
+    """
+    slug = (request.query_params.get("project") or "").strip()
+    if not slug:
+        return PlainTextResponse("pass ?project=<slug>", status_code=400)
+    try:
+        with connect() as conn:
+            if request.method == "GET":
+                row = conn.execute("SELECT markdown, updated_at FROM pushed_handoffs WHERE slug = ?",
+                                   (slug,)).fetchone()
+                if row is None:
+                    return PlainTextResponse(f"No handoff has been pushed for '{slug}' yet.", status_code=404)
+                return PlainTextResponse(row["markdown"])
+            raw = await request.body()
+            if len(raw) > MAX_HANDOFF_BYTES:
+                return PlainTextResponse("handoff too large", status_code=413)
+            body = json.loads(raw)
+            text = (body.get("markdown") or "").strip()
+            if not text:
+                return PlainTextResponse('body must be JSON like {"markdown": "..."}', status_code=400)
+            conn.execute(
+                "INSERT INTO pushed_handoffs (slug, markdown, pushed_by, updated_at) "
+                "VALUES (?, ?, ?, datetime('now')) ON CONFLICT(slug) DO UPDATE SET "
+                "markdown = excluded.markdown, pushed_by = excluded.pushed_by, updated_at = excluded.updated_at",
+                (slug, text, str(body.get("pushed_by") or "unknown")[:40]))
+            return PlainTextResponse(f"stored handoff for '{slug}' ({len(text)} chars)")
+    except (ValueError, AttributeError) as exc:     # bad JSON / body not an object
+        return PlainTextResponse(f"bad request: {exc}", status_code=400)
+
+
 class RequireToken:
     """Reject any request whose token doesn't match, before it reaches an MCP tool.
 
@@ -128,6 +168,7 @@ _combined = Starlette(
     routes=[
         Route("/task", plain_task, methods=["GET", "POST"]),
         Route("/context", plain_context, methods=["GET"]),
+        Route("/handoff", handoff_box, methods=["GET", "POST"]),
         Mount("/", app=_mcp_app),
     ],
     lifespan=lambda app: mcp.session_manager.run(),

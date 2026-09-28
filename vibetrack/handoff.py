@@ -68,15 +68,48 @@ def build(conn: sqlite3.Connection, pid: int) -> str:
     return "\n".join(out)
 
 
+def push(text: str, slug: str, url: str, token: str, who: str = "cli") -> str:
+    """POST the briefing to a remote VibeTrack server's /handoff box; returns its reply."""
+    import json
+    import urllib.parse
+    import urllib.request
+
+    if not url.startswith(("https://", "http://127.0.0.1", "http://localhost")):
+        raise ValueError("refusing to send a handoff over plain http to a non-local address")
+    endpoint = f"{url.rstrip('/')}/handoff?" + urllib.parse.urlencode({"project": slug, "token": token})
+    req = urllib.request.Request(endpoint, data=json.dumps({"markdown": text, "pushed_by": who}).encode(),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=30) as res:   # raises HTTPError on 401/400/413
+        return res.read().decode()
+
+
 def main() -> None:
-    if len(sys.argv) not in (2, 4) or (len(sys.argv) == 4 and sys.argv[2] != "--out"):
-        sys.exit("usage: python -m vibetrack.handoff <project-slug> [--out <file>]")
+    import argparse
+    import os
+
+    ap = argparse.ArgumentParser(description="Build the handoff briefing for a project")
+    ap.add_argument("slug")
+    ap.add_argument("--out", help="write the briefing to this file instead of printing it")
+    ap.add_argument("--push", metavar="URL", help="also push it to a remote VibeTrack server, e.g. "
+                    "https://your-app.onrender.com (token from $VIBETRACK_REMOTE_TOKEN)")
+    ap.add_argument("--as", dest="who", default="cli", help="name to record as the pusher (default: cli)")
+    args = ap.parse_args()
+
     with connect() as conn:
-        text = build(conn, project_id(conn, sys.argv[1]))
-    if len(sys.argv) == 4:
-        Path(sys.argv[3]).write_text(text)
-        print(f"Wrote {sys.argv[3]}")
-    else:
+        text = build(conn, project_id(conn, args.slug))
+    if args.out:
+        Path(args.out).write_text(text)
+        print(f"Wrote {args.out}")
+    if args.push:
+        token = os.environ.get("VIBETRACK_REMOTE_TOKEN")
+        if not token:
+            sys.exit("Set VIBETRACK_REMOTE_TOKEN to your remote server's token first "
+                     "(kept in an env var so it never lands in shell history or a repo).")
+        try:
+            print(push(text, args.slug, args.push, token, args.who))
+        except Exception as exc:
+            sys.exit(f"push failed: {exc}")
+    if not args.out and not args.push:
         print(text)
 
 

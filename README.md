@@ -139,3 +139,16 @@ text in one step. It writes that to `HANDOFF.md` and tells you which tool to ope
 that tool, paste the file, and continue — no digging through old commands.
 The dashboard also shows a line under the status bar: which tool is currently on the project, and
 which one is next in line.
+
+## Pushing the handoff to your remote server (Phase 2.8)
+Your laptop's database and your Render server's database are separate, so a handoff written on
+the laptop isn't visible to ChatGPT through the server. `/handoff` is a drop box that fixes that:
+
+```bash
+export VIBETRACK_REMOTE_TOKEN='<your render token>'      # once per terminal; never commit it
+python -m vibetrack.handoff my-project --push https://<your-service>.onrender.com --as codex
+```
+ChatGPT (or any tool that can open a URL) then reads the latest one at:
+`https://<your-service>.onrender.com/handoff?project=my-project&token=<token>`
+Pushing again replaces the previous one. Add `--out HANDOFF.md` to also save the file locally.
+The token is read from the environment, and the push refuses plain http to non-local addresses.

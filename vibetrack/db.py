@@ -79,6 +79,15 @@ CREATE TABLE IF NOT EXISTS events (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id, created_at);
+
+-- The single latest pushed handoff per project slug (not per project_id: a push can arrive for
+-- a slug that only exists in the pusher's own database, e.g. the laptop pushing to Render).
+CREATE TABLE IF NOT EXISTS pushed_handoffs (
+  slug       TEXT PRIMARY KEY,
+  markdown   TEXT NOT NULL,
+  pushed_by  TEXT NOT NULL DEFAULT 'unknown',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 

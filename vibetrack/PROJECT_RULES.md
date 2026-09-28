@@ -50,8 +50,11 @@ what actually happened. Never re-litigate a recorded decision unless the user as
 The moment you (or the user) hit a quota/usage limit mid-task: finish your current note on the
 task you're on (what's done, what's left), then call `switch_ai` with a one-line reason. It tells
 you which tool to open next and gives you the full handoff text — write that text to `HANDOFF.md`
-(same as step 6 below), then tell the user plainly: "Hit a limit. Open <tool> and paste HANDOFF.md
-there." The user only has to open the next tool and hand it the file; nothing else.
+(same as step 6 below). If the user has a remote server set up (env var `VIBETRACK_REMOTE_TOKEN`
+is set), also run `python -m vibetrack.handoff <slug> --push <server-url> --as <your-tool-name>`
+so the same briefing is waiting at `<server-url>/handoff?project=<slug>&token=...` for tools that
+can only open a URL (like ChatGPT). Then tell the user plainly: "Hit a limit. Open <tool> and
+give it HANDOFF.md (or the /handoff URL)." The user only has to open the next tool; nothing else.
 On first use, ask the user which AI tools they actually have (Claude Code, Codex, Antigravity,
 ChatGPT, Gemini, ...) and set the order with `set_ai_rotation`, instead of assuming.
 
