@@ -116,3 +116,29 @@ def test_upgrading_an_old_database_adds_missing_columns_without_losing_data(tmp_
         assert ov["ai_rotation"]["current"] == "claude"       # new column gets a sane default
     with db.connect() as c:                                  # reconnecting must not error either
         assert c.execute("SELECT ai_cursor FROM projects").fetchone()["ai_cursor"] == 0
+
+
+def test_push_sends_own_user_agent_and_reports_server_reason():
+    """Cloudflare-fronted hosts 403 the default Python-urllib agent; errors must show the reason."""
+    import http.server, threading
+    seen = {}
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen["ua"] = self.headers["User-Agent"]
+            self.rfile.read(int(self.headers["Content-Length"]))
+            code = 401 if "token=bad" in self.path else 200
+            self.send_response(code); self.end_headers()
+            self.wfile.write(b"missing or wrong token" if code == 401 else b"stored")
+        def log_message(self, *a): pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_port}"
+    try:
+        assert handoff.push("# hi", "demo", url, "good") == "stored"
+        assert seen["ua"] == "vibetrack-cli/1.0"
+        with pytest.raises(RuntimeError, match="401.*missing or wrong token"):
+            handoff.push("# hi", "demo", url, "bad")
+    finally:
+        srv.shutdown()

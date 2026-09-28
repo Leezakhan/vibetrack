@@ -71,16 +71,25 @@ def build(conn: sqlite3.Connection, pid: int) -> str:
 def push(text: str, slug: str, url: str, token: str, who: str = "cli") -> str:
     """POST the briefing to a remote VibeTrack server's /handoff box; returns its reply."""
     import json
+    import urllib.error
     import urllib.parse
     import urllib.request
 
     if not url.startswith(("https://", "http://127.0.0.1", "http://localhost")):
         raise ValueError("refusing to send a handoff over plain http to a non-local address")
     endpoint = f"{url.rstrip('/')}/handoff?" + urllib.parse.urlencode({"project": slug, "token": token})
+    # Hosts like Render sit behind Cloudflare, which rejects Python's default "Python-urllib"
+    # User-Agent with a 403 before the request ever reaches our server. curl isn't blocked, which
+    # is why the same request works there. A plain, honest name of our own avoids it.
     req = urllib.request.Request(endpoint, data=json.dumps({"markdown": text, "pushed_by": who}).encode(),
-                                 headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=30) as res:   # raises HTTPError on 401/400/413
-        return res.read().decode()
+                                 headers={"Content-Type": "application/json",
+                                          "User-Agent": "vibetrack-cli/1.0"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as res:
+            return res.read().decode()
+    except urllib.error.HTTPError as exc:                    # keep the server's own explanation
+        detail = exc.read().decode(errors="replace")[:300].strip()
+        raise RuntimeError(f"HTTP {exc.code}: {detail or exc.reason}") from None
 
 
 def main() -> None:
