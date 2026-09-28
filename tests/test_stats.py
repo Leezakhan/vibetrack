@@ -119,3 +119,15 @@ def test_remote_handoff_rejects_bad_requests(tmp_path, monkeypatch):
     assert c.post("/handoff" + good, content=b"not json").status_code == 400               # bad JSON
     assert c.post("/handoff" + good, content=b"[1,2]").status_code == 400                  # JSON, not an object
     assert c.post("/handoff" + good, content=b'{"markdown": "' + b"x" * 600_000 + b'"}').status_code == 413
+
+
+def test_remote_handoff_base64_roundtrip_with_firewall_bait_and_unicode(tmp_path, monkeypatch):
+    import base64
+    c = _remote_client(tmp_path, monkeypatch)
+    q = "?project=medrag&token=t0ken"
+    text = "# Rules — no `eval`, no shell strings; DROP TABLE x; <script>alert(1)</script> ünïcode ✓"
+    b64 = base64.b64encode(text.encode()).decode()
+    assert c.post("/handoff" + q, json={"markdown_b64": b64}).status_code == 200
+    assert c.get("/handoff" + q).text == text                                   # exact round trip
+    assert c.post("/handoff" + q, json={"markdown_b64": "%%%not base64%%%"}).status_code == 400
+    assert c.post("/handoff" + q, json={"markdown_b64": base64.b64encode(b"\xff\xfe").decode()}).status_code == 400

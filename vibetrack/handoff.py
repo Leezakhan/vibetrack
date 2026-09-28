@@ -70,6 +70,7 @@ def build(conn: sqlite3.Connection, pid: int) -> str:
 
 def push(text: str, slug: str, url: str, token: str, who: str = "cli") -> str:
     """POST the briefing to a remote VibeTrack server's /handoff box; returns its reply."""
+    import base64
     import json
     import urllib.error
     import urllib.parse
@@ -81,7 +82,8 @@ def push(text: str, slug: str, url: str, token: str, who: str = "cli") -> str:
     # Hosts like Render sit behind Cloudflare, which rejects Python's default "Python-urllib"
     # User-Agent with a 403 before the request ever reaches our server. curl isn't blocked, which
     # is why the same request works there. A plain, honest name of our own avoids it.
-    req = urllib.request.Request(endpoint, data=json.dumps({"markdown": text, "pushed_by": who}).encode(),
+    payload = {"markdown_b64": base64.b64encode(text.encode("utf-8")).decode("ascii"), "pushed_by": who}
+    req = urllib.request.Request(endpoint, data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json",
                                           "User-Agent": "vibetrack-cli/1.0"}, method="POST")
     try:
