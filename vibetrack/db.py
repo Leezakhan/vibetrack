@@ -80,8 +80,25 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_project ON events(project_id, created_at);
 
+-- The single latest pushed project zip per slug.
+-- Stored as raw bytes (BLOB). Size-capped in the server layer before it reaches here.
+CREATE TABLE IF NOT EXISTS pushed_zips (
+  slug       TEXT PRIMARY KEY,
+  zip_bytes  BLOB NOT NULL,
+  filename   TEXT NOT NULL DEFAULT 'project.zip',
+  pushed_by  TEXT NOT NULL DEFAULT 'unknown',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- The single latest pushed handoff per project slug (not per project_id: a push can arrive for
 -- a slug that only exists in the pusher's own database, e.g. the laptop pushing to Render).
+CREATE TABLE IF NOT EXISTS pushed_code (
+  slug       TEXT PRIMARY KEY,
+  code       TEXT NOT NULL,
+  pushed_by  TEXT NOT NULL DEFAULT 'unknown',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS pushed_handoffs (
   slug       TEXT PRIMARY KEY,
   markdown   TEXT NOT NULL,

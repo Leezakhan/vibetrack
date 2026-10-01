@@ -141,6 +141,95 @@ async def handoff_box(request: Request) -> PlainTextResponse:
         return PlainTextResponse(f"bad request: {exc}", status_code=400)
 
 
+MAX_CODE_BUNDLE_BYTES = 900_000   # base64 adds ~33%; keep the whole request under Render's cap
+
+
+async def code_box(request: Request) -> PlainTextResponse:
+    """Same idea as /handoff, for the code bundle: POST {"code_b64": "..."} stores it per slug,
+    GET returns the latest one as plain text — readable by a tool that can only open a URL."""
+    slug = (request.query_params.get("project") or "").strip()
+    if not slug:
+        return PlainTextResponse("pass ?project=<slug>", status_code=400)
+    try:
+        with connect() as conn:
+            if request.method == "GET":
+                row = conn.execute("SELECT code FROM pushed_code WHERE slug = ?", (slug,)).fetchone()
+                if row is None:
+                    return PlainTextResponse(f"No code has been pushed for '{slug}' yet.", status_code=404)
+                return PlainTextResponse(row["code"])
+            raw = await request.body()
+            if len(raw) > MAX_CODE_BUNDLE_BYTES:
+                return PlainTextResponse("code bundle too large", status_code=413)
+            body = json.loads(raw)
+            text = base64.b64decode(body.get("code_b64", ""), validate=True).decode("utf-8").strip()
+            if not text:
+                return PlainTextResponse('body must be JSON like {"code_b64": "..."}', status_code=400)
+            conn.execute(
+                "INSERT INTO pushed_code (slug, code, pushed_by, updated_at) VALUES (?, ?, ?, datetime('now')) "
+                "ON CONFLICT(slug) DO UPDATE SET code = excluded.code, pushed_by = excluded.pushed_by, "
+                "updated_at = excluded.updated_at",
+                (slug, text, str(body.get("pushed_by") or "unknown")[:40]))
+            return PlainTextResponse(f"stored code bundle for '{slug}' ({len(text)} chars)")
+    except (ValueError, AttributeError) as exc:
+        return PlainTextResponse(f"bad request: {exc}", status_code=400)
+
+
+MAX_ZIP_BYTES = 20 * 1024 * 1024   # 20 MB: typical project code is well under this
+
+
+async def zip_box(request: Request):
+    """POST: upload the project zip.  GET: download it.
+
+    POST body: multipart/form-data with a `file` field, or raw bytes with
+    Content-Type: application/zip. The zip name is taken from the Content-Disposition
+    header if present, otherwise defaults to <slug>-project.zip.
+    Only the server-side token check guards this endpoint; the URL itself is the "password"
+    that you share with ChatGPT so it can download the code.
+    """
+    slug = (request.query_params.get("project") or "").strip()
+    if not slug:
+        return JSONResponse({"error": "pass ?project=<slug>"}, status_code=400)
+    try:
+        with connect() as conn:
+            if request.method == "GET":
+                row = conn.execute(
+                    "SELECT zip_bytes, filename FROM pushed_zips WHERE slug = ?", (slug,)).fetchone()
+                if row is None:
+                    return JSONResponse({"error": f"No zip has been pushed for '{slug}' yet."},
+                                       status_code=404)
+                from starlette.responses import Response
+                return Response(bytes(row["zip_bytes"]),
+                                media_type="application/zip",
+                                headers={"Content-Disposition": f'attachment; filename="{row["filename"]}"'})
+            # POST: accept raw bytes
+            raw = await request.body()
+            if not raw:
+                return JSONResponse({"error": "empty body"}, status_code=400)
+            if len(raw) > MAX_ZIP_BYTES:
+                return JSONResponse({"error": f"zip too large (max {MAX_ZIP_BYTES // 1024 // 1024} MB)"},
+                                    status_code=413)
+            # Validate it's actually a zip
+            if not raw.startswith(b"PK"):
+                return JSONResponse({"error": "not a zip file"}, status_code=400)
+            pushed_by = (request.query_params.get("by") or "unknown")[:40]
+            cd = request.headers.get("content-disposition", "")
+            filename = slug + "-project.zip"
+            for part in cd.split(";"):
+                part = part.strip()
+                if part.startswith("filename="):
+                    filename = part[9:].strip("\"'")[:80] or filename
+                    break
+            conn.execute(
+                "INSERT INTO pushed_zips (slug, zip_bytes, filename, pushed_by, updated_at) "
+                "VALUES (?, ?, ?, ?, datetime('now')) ON CONFLICT(slug) DO UPDATE SET "
+                "zip_bytes = excluded.zip_bytes, filename = excluded.filename, "
+                "pushed_by = excluded.pushed_by, updated_at = excluded.updated_at",
+                (slug, raw, filename, pushed_by))
+            return JSONResponse({"stored": f"{filename} ({len(raw):,} bytes)", "project": slug})
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=500)
+
+
 class RequireToken:
     """Reject any request whose token doesn't match, before it reaches an MCP tool.
 
@@ -176,6 +265,8 @@ _combined = Starlette(
         Route("/task", plain_task, methods=["GET", "POST"]),
         Route("/context", plain_context, methods=["GET"]),
         Route("/handoff", handoff_box, methods=["GET", "POST"]),
+        Route("/zip", zip_box, methods=["GET", "POST"]),
+        Route("/code", code_box, methods=["GET", "POST"]),
         Mount("/", app=_mcp_app),
     ],
     lifespan=lambda app: mcp.session_manager.run(),

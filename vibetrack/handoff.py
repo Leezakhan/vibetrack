@@ -68,6 +68,48 @@ def build(conn: sqlite3.Connection, pid: int) -> str:
     return "\n".join(out)
 
 
+# Default patterns that are never safe to share, even with a private AI tool.
+# The user can add more with --exclude on the CLI.
+_ALWAYS_EXCLUDE = (
+    "*.env", ".env*", ".env", "*.pem", "*.key", "*.p12", "*.pfx", "*.cer",
+    "*.db", "*.sqlite", "*.sqlite3",
+    "*.log", "*.pyc", "__pycache__", ".venv", "venv", ".git",
+    "node_modules", "*.lock", "package-lock.json",
+    "secrets.*", "credentials.*", "serviceAccountKey*",
+)
+
+
+def make_zip(project_dir: "Path", extra_exclude: tuple = ()) -> bytes:
+    """Return a zip of `project_dir` as bytes, with unsafe files stripped out.
+
+    The zip is built entirely in memory so nothing is written to disk — the caller
+    can upload the bytes directly without leaving a file for someone else to find.
+    Why in-memory? The user's Downloads folder is often synced to cloud storage.
+    """
+    import fnmatch
+    import io
+    import zipfile
+
+    exclude = _ALWAYS_EXCLUDE + tuple(extra_exclude)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(project_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(project_dir)
+            parts = rel.parts
+            # skip if any path component or the full name matches an exclude pattern
+            if any(fnmatch.fnmatch(part, pat) for part in parts for pat in exclude):
+                continue
+            if any(fnmatch.fnmatch(str(rel), pat) for pat in exclude):
+                continue
+            try:
+                zf.write(path, rel)
+            except OSError:
+                pass    # skip unreadable files silently; broken symlinks, etc.
+    return buf.getvalue()
+
+
 def push(text: str, slug: str, url: str, token: str, who: str = "cli") -> str:
     """POST the briefing to a remote VibeTrack server's /handoff box; returns its reply."""
     import base64
@@ -104,6 +146,13 @@ def main() -> None:
     ap.add_argument("--push", metavar="URL", help="also push it to a remote VibeTrack server, e.g. "
                     "https://your-app.onrender.com (token from $VIBETRACK_REMOTE_TOKEN)")
     ap.add_argument("--as", dest="who", default="cli", help="name to record as the pusher (default: cli)")
+    ap.add_argument("--zip", metavar="DIR", dest="zip_dir",
+                    help="also create <slug>-for-ai.zip from this project folder, with secrets stripped")
+    ap.add_argument("--push-zip", dest="push_zip", action="store_true",
+                    help="with --zip and --push: also upload the zip to the remote server "
+                         "so the AI can download it from <server>/zip?project=<slug>&token=...")
+    ap.add_argument("--exclude", metavar="PATTERN", action="append", default=[],
+                    help="extra glob pattern to strip from the zip (repeatable)")
     args = ap.parse_args()
 
     with connect() as conn:
@@ -120,7 +169,41 @@ def main() -> None:
             print(push(text, args.slug, args.push, token, args.who))
         except Exception as exc:
             sys.exit(f"push failed: {exc}")
-    if not args.out and not args.push:
+    if args.zip_dir:
+        project_dir = Path(args.zip_dir).expanduser().resolve()
+        if not project_dir.is_dir():
+            sys.exit(f"zip: {project_dir} is not a folder")
+        out_name = f"{args.slug}-for-ai.zip"
+        out_path = Path.cwd() / out_name
+        data = make_zip(project_dir, tuple(args.exclude))
+        out_path.write_bytes(data)
+        size_kb = round(len(data) / 1024)
+        print(f"Zip ready: {out_path} ({size_kb} KB) — upload this to the AI alongside the handoff URL.")
+        print(f"Excluded by default: secrets, .env, keys, databases, logs, __pycache__, .git, node_modules")
+        if args.exclude:
+            print(f"Also excluded: {', '.join(args.exclude)}")
+        if args.push_zip and args.push:
+            import json, urllib.error, urllib.parse, urllib.request
+            token = os.environ.get("VIBETRACK_REMOTE_TOKEN")
+            if not token:
+                sys.exit("Set VIBETRACK_REMOTE_TOKEN before using --push-zip")
+            url = args.push.rstrip("/") + "/zip?" + urllib.parse.urlencode(
+                {"project": args.slug, "token": token, "by": args.who})
+            req = urllib.request.Request(url, data=data,
+                headers={"Content-Type": "application/zip",
+                         "Content-Disposition": f'attachment; filename="{out_name}"',
+                         "User-Agent": "vibetrack-cli/1.0"}, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=120) as res:
+                    reply = json.loads(res.read().decode())
+                    dl_url = (args.push.rstrip("/") + "/zip?"
+                              + urllib.parse.urlencode({"project": args.slug, "token": token}))
+                    print(f"Zip stored on server ({reply.get('stored','?')})")
+                    print(f"Download URL: {dl_url}")
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode(errors="replace")[:300].strip()
+                sys.exit(f"zip push failed: HTTP {exc.code}: {detail or exc.reason}")
+    if not args.out and not args.push and not args.zip_dir:
         print(text)
 
 

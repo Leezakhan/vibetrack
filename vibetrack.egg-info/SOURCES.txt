@@ -5,6 +5,7 @@ tests/test_init.py
 tests/test_stats.py
 vibetrack/PROJECT_RULES.md
 vibetrack/__init__.py
+vibetrack/codebundle.py
 vibetrack/dashboard.py
 vibetrack/db.py
 vibetrack/decisions.py
